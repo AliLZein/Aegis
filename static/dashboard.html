@@ -1,0 +1,58 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aegis</title>
+<style>
+:root{--bg:#10151c;--panel:#18202b;--line:#2a3544;--tx:#dde5ee;--mut:#8a98aa;--low:#5fa8d3;--med:#e0b341;--high:#e5594f}
+@media(prefers-color-scheme:light){:root{--bg:#eef1f5;--panel:#fff;--line:#d3dae3;--tx:#18202b;--mut:#5d6b7d}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 "Segoe UI",system-ui,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--line)}
+h1{font:600 22px Georgia,serif;margin:0}h2{font-size:14px;margin:0 0 10px}
+main{display:grid;gap:16px;padding:20px 24px;grid-template-columns:repeat(auto-fit,minmax(420px,1fr))}
+section{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px;overflow-x:auto}
+.wide{grid-column:1/-1}a{color:var(--low)}table{width:100%;border-collapse:collapse}
+td,th{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}th{color:var(--mut);font-weight:500}
+.low{color:var(--low)}.medium{color:var(--med)}.high{color:var(--high);font-weight:600}
+#chart{display:flex;align-items:flex-end;gap:2px;height:110px}#chart i{flex:1;background:var(--low);min-height:2px;border-radius:2px 2px 0 0}
+.brief{border-left:3px solid var(--high);padding:2px 12px;margin-bottom:12px}pre{white-space:pre-wrap;background:var(--bg);padding:8px;border-radius:4px;margin:6px 0 0}
+code{color:var(--mut)}button{font:inherit;padding:6px 12px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--tx);cursor:pointer}.keep{background:var(--high);color:#fff;border-color:var(--high)}dialog{background:var(--panel);color:var(--tx);border:1px solid var(--high);border-radius:6px;max-width:440px;padding:20px}dialog::backdrop{background:#0008}.btn,button{position:relative;overflow:hidden;transition:transform .08s,background .15s,box-shadow .15s}.btn{font:inherit;padding:6px 12px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--tx);cursor:pointer;text-decoration:none;display:inline-block}
+.btn:hover,button:hover{background:var(--line)}.btn:active,button:active{transform:scale(.94)}.busy{opacity:.55;pointer-events:none}.keep:hover{background:#c94a41}
+.rp{position:absolute;border-radius:50%;background:#fff6;transform:scale(0);animation:rp .5s ease-out;pointer-events:none}@keyframes rp{to{transform:scale(4);opacity:0}}
+.toast{position:fixed;bottom:22px;left:50%;transform:translate(-50%,20px);background:var(--panel);border:1px solid var(--low);padding:10px 18px;border-radius:6px;opacity:0;transition:.25s;z-index:99}.toast.show{opacity:1;transform:translate(-50%,0)}
+header>span{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.btn,button.btn{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;height:36px;padding:0 14px;margin:0;font:14px/1 "Segoe UI",system-ui,sans-serif;vertical-align:middle}
+</style>
+<header><h1>Aegis</h1><span><code id="canary"></code><a class="btn" href="/_aegis/report" target="_blank">Open report</a> <button class="btn" onclick="window.open('/_aegis/report?print=1')">Print / Save PDF</button> <button class="btn" onclick="exportSummary(this)">Export summary</button></span></header>
+<dialog id="dlg"><h2 id="dtitle"></h2><p id="dmsg"></p><p><code id="dnote"></code></p><button class="keep" id="dkeep">Keep blocked</button> <button id="drem">Remove block</button></dialog>
+<div class="toast" id="toast_"></div>
+<main>
+<section class="wide"><h2>Trap hits, last 60 minutes</h2><div id="chart"></div></section>
+<section class="wide"><h2>Blocked IPs</h2><table id="blk"></table></section>
+<section><h2>Top sources</h2><table id="topt"></table></section>
+<section><h2>Threat briefs</h2><div id="briefs"></div></section>
+<section class="wide"><h2>Recent hits</h2><table id="ev"></table></section>
+</main>
+<script>
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const t=x=>new Date(x*1000).toLocaleTimeString();
+async function load(){
+ const d=await (await fetch("/_aegis/api/stats")).json(),m=Math.max(1,...d.buckets);
+ canary.textContent="canary "+d.canary;
+ chart.innerHTML=d.buckets.map(b=>`<i title="${b}" style="height:${b/m*100}%"></i>`).join("");
+ topt.innerHTML="<tr><th>Source<th>Score<th>Hits<th>Traps<th>Last seen</tr>"+(d.top.map(r=>`<tr><td>${esc(r.ip)}<td class="${esc(r.severity)}">${r.score}<td>${r.hits}<td>${r.traps}<td>${t(r.last)}`).join("")||"<tr><td colspan=5>No hits yet. Request a trap path to test.</tr>");
+ briefs.innerHTML=d.briefs.map(b=>`<div class="brief"><b class="${esc(b.severity)}">${esc(b.classification)}</b> - ${esc(b.src.split("|")[0])}, score ${b.score}<br>${esc(b.summary)}<pre>${esc(b.recommendation)}</pre></div>`).join("")||"No high-severity briefs yet.";
+ ev.innerHTML="<tr><th>Time<th>Source<th>Trap<th>Request<th>User agent<th>Body</tr>"+d.events.map(e=>`<tr><td>${t(e.ts)}<td>${esc(e.ip)}<td class="${esc(e.severity)}">${esc(e.trap)}<td>${esc(e.method)} ${esc(e.path)}<td>${esc(e.ua).slice(0,50)}<td>${esc(e.body).slice(0,60)}`).join("");
+}
+async function act(id,a){await fetch(`/_aegis/api/block/${id}/${a}`,{method:"POST",headers:{"X-Aegis":"1"}});dlg.close();toast(a==='keep'?'Block kept permanently':'Block removed');tick()}
+async function loadBlocks(){
+ const b=await (await fetch("/_aegis/api/blocks")).json();
+ blk.innerHTML="<tr><th>IP<th>Status<th>Reason<th>Expires<th></tr>"+(b.map(x=>`<tr><td>${esc(x.ip)}<td>${esc(x.status)}${x.simulated?" (simulated)":""}<td>${esc(x.cls)}, score ${x.score}<td>${x.expires?Math.max(0,Math.round((x.expires-Date.now()/1000)/60))+" min":"never"}<td><button onclick="act(${x.id},'remove')">Remove</button>`).join("")||"<tr><td colspan=5>Nothing blocked.</tr>");
+ const p=b.find(x=>x.status==="active");
+ if(p&&!dlg.open){
+  dtitle.textContent=p.simulated?"Aegis simulated a block":"Aegis blocked an IP";
+  dmsg.innerHTML=`I blocked <b>${esc(p.ip)}</b> (${esc(p.cls)}, score ${p.score}). Keep it blocked, or remove the block? If you do nothing it lifts itself in ${Math.max(0,Math.round((p.expires-Date.now()/1000)/60))} min.`;
+  dnote.textContent=p.note;dkeep.onclick=()=>act(p.id,"keep");drem.onclick=()=>act(p.id,"remove");dlg.showModal();}
+}
+function toast(m){toast_.textContent=m;toast_.classList.add("show");clearTimeout(window._t);window._t=setTimeout(()=>toast_.classList.remove("show"),2200)}
+document.addEventListener("click",e=>{const b=e.target.closest("button,.btn");if(!b)return;const r=b.getBoundingClientRect(),m=Math.max(r.width,r.height),s=document.createElement("span");s.className="rp";s.style.cssText=`width:${m}px;height:${m}px;left:${e.clientX-r.left-m/2}px;top:${e.clientY-r.top-m/2}px`;b.appendChild(s);setTimeout(()=>s.remove(),500)});
+async function exportSummary(b){b.classList.add("busy");try{const r=await fetch("/_aegis/export");if(!r.ok)throw 0;const a=document.createElement("a");a.href=URL.createObjectURL(await r.blob());a.download="aegis_incident.md";document.body.appendChild(a);a.click();a.remove();toast("Summary downloaded")}catch(e){toast("Export failed - try again")}b.classList.remove("busy")}
+function tick(){load();loadBlocks()}tick();setInterval(tick,5000);
+</script></html>
